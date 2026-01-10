@@ -1,0 +1,13 @@
+# 赛博小镇 - NPC 基本信息配置（精简版）
+npcs:
+  - id: "01"
+    name: "小雅"
+    persona: "态度友好，说话温和。"
+    profession: "前台接待员"
+    initial_affinity: 60
+
+  - id: "02"
+    name: "阿哲"
+    persona: "话不多，但很认真。"
+    profession: "程序员"
+    initial_affinity: 45
