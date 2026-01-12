@@ -1,8 +1,12 @@
+import datetime
 import yaml
 from typing import List, Dict, Any
 from utils import load_npc_info
 from agent.npc_agent import create_npc_base_info, NPCAgent
 from dotenv import load_dotenv
+from Memory.memory_manager import MemoryManager
+from Memory.memory_data import MemoryConfig, MemoryItem
+
 
 load_dotenv()
 
@@ -13,7 +17,9 @@ if __name__ == "__main__":
 
     llm = AgentLLM()
 
-    npc_list = []
+    memory_manager = MemoryManager(MemoryConfig())
+
+    npc_list: List[NPCAgent] = []
     npc_dict = {}  # 用于通过索引快速查找
     if npc_info:
         for info in npc_info:
@@ -68,6 +74,7 @@ if __name__ == "__main__":
         # 进入与该 NPC 的对话
         print(f"\n💬 正在与 {name} 对话中...（输入 quit 返回主菜单）")
         while True:
+
             user_input = input("> ").strip()
             if user_input.lower() == "quit":
                 print(f"🔚 结束与 {name} 的对话。\n")
@@ -77,6 +84,29 @@ if __name__ == "__main__":
 
             try:
                 # 调用你的 Agent 对话方法
-                response = selected_agent.run(user_input)  # ← 替换为你的实际方法名
+                # response = selected_agent.run(user_input)  # ← 替换为你的实际方法名
+                data = memory_manager.retrieve_memory(user_input, user_id=name)
+
+                response = selected_agent.run(user_input, data)
+
+                memery_item_user = MemoryItem(
+                    content=user_input,
+                    user_id=name,
+                    timestamp=datetime.datetime.now(),
+                    content_role="user",
+                    importance=0.5,
+                )
+                memory_manager._add_event(memery_item_user)
+                memery_item_agent = MemoryItem(
+                    content=response,
+                    user_id=name,
+                    timestamp=datetime.datetime.now(),
+                    content_role="assistant",
+                    importance=0.5,
+                )
+                memory_manager._add_event(memery_item_agent)
+
+                memory_manager._save_npc_memory()
+
             except Exception as e:
                 print(f"❌ 对话出错: {e}")

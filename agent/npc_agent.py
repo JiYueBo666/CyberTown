@@ -1,4 +1,6 @@
 from llm import AgentLLM
+from typing import List, Any, Dict
+from Memory.memory_data import MemoryItem
 
 
 class NPCAgent:
@@ -7,18 +9,26 @@ class NPCAgent:
         self.system_prompt = system_prompt
         self.name = name
 
-    def run(self, user_input):
-        return self._chat_stream(user_input)
+    def run(self, user_input, data: List[MemoryItem]):
+        if len(data) > 0:
+            data = [{"role": mem.content_role, "content": mem.content} for mem in data]
 
-    def _chat_stream(self, user_message: str, temperature: float = 0.2) -> str:
+        return self._chat_stream(user_input, data)
+
+    def _chat_stream(
+        self, user_message: str, data: List, temperature: float = 0.2
+    ) -> str:
         """
         Agent 层控制流式输出：决定“何时打印名字”、“如何逐字显示”
         实现了解耦：LLM 只给 token，Agent 决定怎么 show
         """
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": user_message},
         ]
+
+        messages.extend(data)
+
+        messages.append({"role": "user", "content": user_message})
 
         print(f"{self.name}：", end="", flush=True)
 
