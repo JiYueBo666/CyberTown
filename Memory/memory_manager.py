@@ -1,10 +1,12 @@
 from .memory_data import MemoryConfig, MemoryItem
 import os
-from typing import Dict, DefaultDict, Any, List
+from typing import Dict, DefaultDict, Any, List, Optional
 import jieba
 import json, datetime
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import uuid
+import logging
 
 
 class MemoryManager:
@@ -174,3 +176,75 @@ class MemoryManager:
             return list(jieba.cut(text))
         else:
             return text.split()
+
+
+class MemoryManager2:
+    """记忆管理器 - 统一的记忆操作接口
+
+    负责：
+    - 记忆生命周期管理
+    - 记忆优先级和重要性评估
+    - 记忆遗忘和清理机制
+    - 多类型记忆的协调管理
+    """
+
+    def __init__(
+        self,
+        config: Optional[MemoryConfig] = None,
+        user_id: str = "default_user",
+        enable_working: bool = True,
+        enable_episodic: bool = True,
+        enable_semantic: bool = True,
+        enable_perceptual: bool = False,
+    ):
+        self.config = config or MemoryConfig()
+        self.user_id = user_id
+        # 初始化各类型记忆
+        self.memory_types = {}
+
+        if enable_working:
+            self.memory_types["working"] = WorkingMemory(self.config)
+
+        if enable_episodic:
+            self.memory_types["episodic"] = EpisodicMemory(self.config)
+
+        if enable_semantic:
+            self.memory_types["semantic"] = SemanticMemory(self.config)
+
+        if enable_perceptual:
+            self.memory_types["perceptual"] = PerceptualMemory(self.config)
+
+    def add_memory(
+        self,
+        content: str,
+        memory_type: str = "working",
+        importance: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        auto_classify: bool = True,
+    ) -> str:
+        """
+            content: 记忆内容
+            memory_type: 记忆类型
+            importance: 重要性分数 (0-1)
+            metadata: 元数据
+            auto_classify: 是否自动分类到合适的记忆类型
+        Returns:
+            记忆ID
+        """
+
+        # 创建记忆项
+        memory_item = MemoryItem(
+            id=str(uuid.uuid4()),
+            content=content,
+            memory_type=memory_type,
+            user_id=self.user_id,
+            timestamp=datetime.now(),
+            importance=importance,
+            metadata=metadata or {},
+        )
+
+        if memory_type in self.memory_types:
+            memory_id = self.memory_types[memory_type].add(memory_item)
+            return memory_id
+        else:
+            raise ValueError(f"不支持的记忆类型: {memory_type}")

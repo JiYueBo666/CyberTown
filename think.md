@@ -3,3 +3,7 @@
     采用配置文件，检测NPC配置进行动态加载。不采用硬编码
 2. NPC加载过程中，新创建的NPC，和已经有过互动的NPC该如何处理？
     历史互动与NPC基本信息分别存放。然后合并
+
+# 梳理
+    agent-接入tool。记忆管理以tool形式存在
+    chat-->tool--->memory tool--->memory_manager--->memory_type 具体操作
