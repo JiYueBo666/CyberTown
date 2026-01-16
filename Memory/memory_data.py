@@ -5,14 +5,19 @@ from abc import abstractmethod
 from datetime import datetime, timedelta
 import heapq
 import jieba
+from hello_agents.tools import MemoryTool
 
 
 class MemoryItem(BaseModel):
+    """记忆项数据结构"""
+
+    id: str
     content: str
+    memory_type: str
     user_id: str
     timestamp: datetime
-    content_role: str  # 是用户还是assistant
     importance: float = 0.5
+    metadata: Dict[str, Any] = {}
 
 
 class MemoryConfig:
@@ -279,3 +284,11 @@ class WorkingMemory(BaseMemory):
                 lowest_memory = memory
         if lowest_memory:
             self.remove(lowest_memory.id)
+
+    def _update_heap_priority(self, memory: MemoryItem):
+        """更新堆中记忆的优先级"""
+        # 简单实现：重建堆
+        self.memory_heap = []
+        for mem in self.memories:
+            priority = self._calculate_priority(mem)
+            heapq.heappush(self.memory_heap, (-priority, mem.timestamp, mem))
