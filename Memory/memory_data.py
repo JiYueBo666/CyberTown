@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 from abc import abstractmethod
 from datetime import datetime, timedelta
 import heapq
-import jieba
+import jieba, os
 from hello_agents.tools import MemoryTool
 
 
@@ -32,6 +32,30 @@ class MemoryConfig:
     working_memory_capacity: int = 10
     working_memory_tokens: int = 2000
     working_memory_ttl_minutes: int = 120
+
+
+class Episode:
+    """情景记忆中的单个情景"""
+
+    def __init__(
+        self,
+        episode_id: str,
+        user_id: str,
+        session_id: str,
+        timestamp: datetime,
+        content: str,
+        context: Dict[str, Any],
+        outcome: Optional[str] = None,
+        importance: float = 0.5,
+    ):
+        self.episode_id = episode_id
+        self.user_id = user_id
+        self.session_id = session_id
+        self.timestamp = timestamp
+        self.content = content
+        self.context = context
+        self.outcome = outcome
+        self.importance = importance
 
 
 class BaseMemory(ABC):
@@ -292,3 +316,108 @@ class WorkingMemory(BaseMemory):
         for mem in self.memories:
             priority = self._calculate_priority(mem)
             heapq.heappush(self.memory_heap, (-priority, mem.timestamp, mem))
+
+
+class EpisodeMemory(BaseMemory):
+    def __init__(self, config: MemoryConfig, storage_backend=None):
+        super().__init__(config, storage_backend)
+        # 本地缓存（内存）
+        self.episodes: List[Episode] = []
+        self.sessions: Dict[str, List[str]] = {}  # session_id -> episode_ids
+
+        # 模式识别缓存
+        self.patterns_cache = {}
+        self.last_pattern_analysis = None
+
+        # 权威文档存储（SQLite）
+        db_dir = (
+            self.config.storage_path
+            if hasattr(self.config, "storage_path")
+            else "./memory_data"
+        )
+        os.makedirs(db_dir, exist_ok=True)
+        db_path = os.path.join(db_dir, "memory.db")
+        self.doc_store = SQLiteDocumentStore(db_path=db_path)
+
+        # 统一嵌入模型（多语言，默认384维）
+        self.embedder = get_text_embedder()
+
+        # 向量存储（Qdrant - 使用连接管理器避免重复连接）
+        from ..storage.qdrant_store import QdrantConnectionManager
+
+        qdrant_url = os.getenv("QDRANT_URL")
+        qdrant_api_key = os.getenv("QDRANT_API_KEY")
+        self.vector_store = QdrantConnectionManager.get_instance(
+            url=qdrant_url,
+            api_key=qdrant_api_key,
+            collection_name=os.getenv("QDRANT_COLLECTION", "hello_agents_vectors"),
+            vector_size=get_dimension(getattr(self.embedder, "dimension", 384)),
+            distance=os.getenv("QDRANT_DISTANCE", "cosine"),
+        )
+
+    def add(self, memory_item: MemoryItem) -> str:
+        """添加情景记忆"""
+        # 从元数据中提取情景信息
+        session_id = memory_item.metadata.get("session_id", "default_session")
+        context = memory_item.metadata.get("context", {})
+        outcome = memory_item.metadata.get("outcome")
+        participants = memory_item.metadata.get("participants", [])
+        tags = memory_item.metadata.get("tags", [])
+
+        # 创建情景（内存缓存）
+        episode = Episode(
+            episode_id=memory_item.id,
+            user_id=memory_item.user_id,
+            session_id=session_id,
+            timestamp=memory_item.timestamp,
+            content=memory_item.content,
+            context=context,
+            outcome=outcome,
+            importance=memory_item.importance,
+        )
+        self.episodes.append(episode)
+        if session_id not in self.sessions:
+            self.sessions[session_id] = []
+        self.sessions[session_id].append(episode.episode_id)
+
+        # 1) 权威存储（SQLite）
+        ts_int = int(memory_item.timestamp.timestamp())
+        self.doc_store.add_memory(
+            memory_id=memory_item.id,
+            user_id=memory_item.user_id,
+            content=memory_item.content,
+            memory_type="episodic",
+            timestamp=ts_int,
+            importance=memory_item.importance,
+            properties={
+                "session_id": session_id,
+                "context": context,
+                "outcome": outcome,
+                "participants": participants,
+                "tags": tags,
+            },
+        )
+        # 2) 向量索引（Qdrant）
+        try:
+            embedding = self.embedder.encode(memory_item.content)
+            if hasattr(embedding, "tolist"):
+                embedding = embedding.tolist()
+            self.vector_store.add_vectors(
+                vectors=[embedding],
+                metadata=[
+                    {
+                        "memory_id": memory_item.id,
+                        "user_id": memory_item.user_id,
+                        "memory_type": "episodic",
+                        "importance": memory_item.importance,
+                        "session_id": session_id,
+                        "content": memory_item.content,
+                    }
+                ],
+                ids=[memory_item.id],
+            )
+        except Exception:
+            # 向量入库失败不影响权威存储
+            pass
+
+        return memory_item.id
