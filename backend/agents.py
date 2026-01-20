@@ -115,7 +115,9 @@ class NPCAgentManager:
                 else:
                     agent = None
                 self.agents[name] = agent
+                print("agent{name}添加添加")
                 memory_manager = self._create_memory_manager(name)
+                print(f"  💾 {name}的记忆系统已初始化")
                 self.memories[name] = memory_manager
             except Exception as e:
                 print(f"---[NPC {name} 初始化失败: {e}]---")
@@ -132,9 +134,9 @@ class NPCAgentManager:
             working_memory_capacity=10,
             working_memory_tokens=2000,
         )
-
+        print(f"{npc_name}记忆系统配置成功")
         memory_manager = MemoryManager(
-            config=MemoryConfig,
+            config=memory_config,
             user_id=npc_name,
             enable_episodic=True,
             enable_working=True,
